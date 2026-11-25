@@ -27,17 +27,47 @@ public interface RatingPolicy {
     CalculationResult calculate(MatchStats stats);
 
     static CalculationResult defaultCompetitivePolicy(MatchStats stats) {
-        int marginBonus = Math.min(Math.max(stats.roundMargin(), 1), 13);
-        int baseRR = stats.isWin() ? (10 + marginBonus) : -(10 + marginBonus);
+        int margin = Math.min(Math.max(stats.roundMargin(), 1), 13);
+        int baseMagnitude = 12 + margin;
+        int baseRR = stats.isWin() ? baseMagnitude : -baseMagnitude;
+
         double kd = stats.deaths() == 0 ? stats.kills() : (double) stats.kills() / stats.deaths();
-        int performanceBonus = (stats.combatScore() >= 300 || kd > 2.0) ? 5 : 0;
+        int performanceAdjustment = calculateKdAdjustment(kd)
+            + calculateCombatScoreAdjustment(stats.combatScore())
+            + (stats.assists() >= 8 ? 1 : 0);
+
+        int rawDelta = baseRR + performanceAdjustment;
+        int clampedDelta = stats.isWin()
+            ? Math.clamp(rawDelta, 10, 35)
+            : Math.clamp(rawDelta, -35, -5);
+
         int afkPenalty = stats.isAfk() ? -10 : 0;
-        int finalDelta = baseRR + performanceBonus + afkPenalty;
+        int finalDelta = clampedDelta + afkPenalty;
 
         String tierStatus = "MAINTAINED";
-        if (finalDelta >= 25) tierStatus = "PROMOTED";
-        else if (finalDelta <= -20) tierStatus = "DEMOTED";
+        if (finalDelta >= 25) {
+            tierStatus = "PROMOTED";
+        } else if (finalDelta <= -20) {
+            tierStatus = "DEMOTED";
+        }
 
         return new CalculationResult(finalDelta, tierStatus);
+    }
+
+    private static int calculateKdAdjustment(double kd) {
+        if (kd >= 2.0) return 4;
+        if (kd >= 1.5) return 3;
+        if (kd >= 1.2) return 2;
+        if (kd >= 1.0) return 1;
+        if (kd >= 0.8) return 0;
+        if (kd >= 0.5) return -2;
+        return -4;
+    }
+
+    private static int calculateCombatScoreAdjustment(int combatScore) {
+        if (combatScore >= 300) return 3;
+        if (combatScore >= 240) return 2;
+        if (combatScore >= 180) return 0;
+        return -1;
     }
 }
